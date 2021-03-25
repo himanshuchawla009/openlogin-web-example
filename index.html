@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Openlogin x Ethereum Integration</title>
+  </head>
+  <body>
+    <div>
+      <p id="text">Loading...</p>
+      <p id="error"></p>
+      <p id="public-address"></p>
+      <p id="private-key"></p>
+      <p id="account-bal"></p>
+
+      <button id="login">Login</button>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@toruslabs/openlogin@0.2.0/dist/openlogin.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@toruslabs/openlogin-utils@0.2.0/dist/openlogin-utils.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/ethereum/web3.js@1.0.0-beta.34/dist/web3.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/eccrypto-js@5.4.0/dist/umd/index.min.js"></script>
+    <script>
+    (function(){
+        var sdkInstance = null;
+        var openloginUtils = null;
+        var OpenLogin = null;
+      
+        async function renderUserAccount(){
+          const INFURA_NODE_URL = "https://mainnet.infura.io/v3/73d0b3b9a4b2499da81c71a2b2a473a9";
+          const web3 = new window.Web3(
+            new Web3.providers.HttpProvider(INFURA_NODE_URL)
+          );  
+          const account = web3.eth.accounts.privateKeyToAccount(sdkInstance.privKey);
+          const address = account.address;
+          const balance = await web3.eth.getBalance(address);
+          $("#public-address").text(`Public address: ${address} `);
+          $("#private-key").text(`Private key:  ${sdkInstance.privKey} `);
+          $("#account-bal").text(`Account balance: ${balance}`);
+        }
+
+        // helper methods to generate clientId and appKey
+        // client id and appKey are app specific.
+        // User wallets will be scoped to clientId so make sure to keep it same in production env.
+        function generateAppCreds() {
+          let priv = window.eccryptoJS.generatePrivate()
+          let pub = window.eccryptoJS.getPublic(priv)
+          let clientId = openloginUtils.base64url.encode(pub)
+          return { clientId, appKey: priv.toString("hex") };
+        }
+
+        // helper method to generate app origin verification signature
+        // first generateClientCreds and then use this function to get verification signature.
+        // Note: Don't store your appKey in frontend. Just use it to create signature.
+        async function whitelistOrigin(clientId, appKey) {
+          const sig = await OpenLogin.whitelistUrl(clientId, appKey, window.location.origin);
+          return sig;
+        }
+
+        $(document).ready(async function () {
+            try {
+             
+              $("#login").hide();
+              $("#text").text("Openlogin x Ethereum boilerplate");
+              openloginUtils = window.OpenloginUtils;
+              OpenLogin = window.Openlogin;
+              const { clientId, appKey } = generateAppCreds();
+              console.log(await whitelistOrigin(clientId, appKey))
+              sdkInstance = new OpenLogin.default({ 
+                  clientId: "random_id" ,  // client id can be anything for localhost
+                  iframeUrl: "https://beta.openlogin.com"
+              });
+              await sdkInstance.init();
+              if (sdkInstance.privKey) {
+                await renderUserAccount()
+              } else {
+                $("#login").show();
+              }
+            } catch (error) {
+                console.log("error", error);
+                const err = typeof error === "string" ? error : !!error.message ? error.message : "Something went wrong";
+      
+                $("#error").val("Something went wrong!")
+            }
+        });
+        $("#login").click(async function (event) {
+            try {           
+                if (!sdkInstance.privKey) {
+                    //signature  is not required for localhost
+                    // but it is mandatory for running for running 
+                    // openlogin on any other domain.
+                    // helper functions to  generate clientId and signature 
+                    // are given in this example (ie generateAppCreds and whitelistOrigin).
+                    const sig = ""; 
+                    await sdkInstance.login({
+                        loginProvider: "google",
+                        redirectUrl: `${window.origin}`,
+                        originData: {
+                          [window.location.origin]: sig
+                        }
+                    });
+                    return
+                }
+
+                await renderUserAccount();
+                $("#error").hide();
+                $("#login").hide();
+            } catch (error) {
+                console.log("error", error);
+                const err = typeof error === "string" ? 
+                    error : error.message ? error.message : "Something went wrong";
+                
+                $("#error").val("Something went wrong!")
+            }
+        });
+        
+    })()
+  
+    </script>
+  </body>
+</html>
